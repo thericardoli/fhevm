@@ -1,0 +1,111 @@
+# FHE 库
+
+本文档提供了 **FHEVM 库**的高级概述，帮助您了解它如何融入更广泛的 Zama 协议。要了解如何在实践中使用它，请参阅 [Solidity 指南](https://docs.zama.ai/protocol/solidity-guides)。
+
+## 什么是 FHEVM 库？
+
+FHEVM 库使开发人员能够构建在加密数据上操作的智能合约——而无需任何密码学知识。
+
+它扩展了标准的 Solidity 开发流程，提供：
+
+- 加密数据类型
+- 对加密值的算术、逻辑和条件操作
+- 细粒度的访问控制
+- 安全的输入处理和证明支持
+
+该库作为全同态加密（FHE）的**抽象层**，与链外组件（如**协处理器**和**网关**）无缝交互。
+
+## 主要功能
+
+### 加密数据类型
+
+该库引入了常见 Solidity 类型的加密变体，实现为用户定义的值类型。在内部，这些表示为指向链外存储的加密值的 `bytes32` 句柄。
+
+| 类别          | 类型                                |
+| ----------------- | ------------------------------------ |
+| 布尔值          | `ebool`                              |
+| 无符号整数 | `euint8`, `euint16`, ..., `euint256` |
+| 有符号整数   | `eint8`, `eint16,` ..., `eint256`    |
+| 地址         | `eaddress`                           |
+
+→ 参见完整指南 [加密数据类型](https://docs.zama.ai/protocol/solidity-guides/smart-contract/types)。
+
+### FHE 操作
+
+每种加密类型都支持类似于其明文对应类型的操作：
+
+- 算术：`add`、`sub`、`mul`、`div`、`rem`、`neg`
+- 逻辑：`and`、`or`、`xor`、`not`
+- 比较：`lt`、`gt`、`le`、`ge`、`eq`、`ne`、`min`、`max`
+- 位操作：`shl`、`shr`、`rotl`、`rotr`
+
+这些操作通过生成新句柄并发出事件供协处理器处理实际的链外 FHE 计算，在链上进行符号执行。
+
+示例：
+
+```solidity
+function compute(euint64 x, euint64 y, euint64 z) public returns (euint64) {
+  euint64 result = FHE.mul(FHE.add(x, y), z);
+  return result;
+}
+```
+
+→ 参见完整指南 [加密类型的操作](https://docs.zama.ai/protocol/solidity-guides/smart-contract/operations)。
+
+### 使用加密条件进行分支
+
+直接的 if 或 require 语句与加密布尔值不兼容。相反，该库提供了一个 `select` 操作符来模拟条件逻辑，而不暴露采取了哪个分支：
+
+```solidity
+ebool condition = FHE.lte(x, y);
+euint64 result = FHE.select(condition, valueIfTrue, valueIfFalse);
+```
+
+这即使在条件逻辑中也能保持机密性。
+
+→ 参见完整指南 [分支](https://docs.zama.ai/protocol/solidity-guides/smart-contract/logics/conditions)。
+
+### 处理外部加密输入
+
+当用户想要传递加密输入（例如，他们在链外加密或从另一条链桥接的值）时，他们提供：
+
+- 外部值
+- 协处理器签名列表（证明）
+
+函数 `fromExternal` 用于验证证明并提取可用的加密句柄：
+
+```solidity
+function handleInput(externalEuint64 param1, externalEbool param2, bytes calldata attestation) public {
+  euint64 val = FHE.fromExternal(param1, attestation);
+  ebool flag = FHE.fromExternal(param2, attestation);
+}
+```
+
+这确保智能合约只接受经过授权的、格式良好的密文。
+
+→ 参见完整指南 [加密输入](https://docs.zama.ai/protocol/solidity-guides/smart-contract/inputs)。
+
+### 访问控制
+
+FHE 库还公开了使用主机合约维护的 ACL 管理对加密值的访问的方法：
+
+- `allow(handle, address)`：授予持久访问权限
+- `allowTransient(handle, address)`：仅为当前交易授予访问权限
+- `allowForDecryption(handle)`：使句柄可公开解密
+- `isAllowed(handle, address)`：检查地址是否有访问权限
+- `isSenderAllowed(handle)`：检查 msg.sender 权限的快捷方式
+
+这些 `allow` 方法发出协处理器消费的事件，以在网关中复制 ACL 状态。
+
+→ 参见完整指南 [ACL](https://docs.zama.ai/protocol/solidity-guides/smart-contract/acl)。
+
+### 伪随机加密值
+
+该库允许生成伪随机加密整数，对游戏、彩票或随机化逻辑很有用：
+
+- `randEuintXX()`
+- `randEuintXXBounded`(uint bound)
+
+这些在协处理器之间是确定性的，对外部观察者来说是不可区分的。
+
+→ 参见完整指南 [生成随机数](https://docs.zama.ai/protocol/solidity-guides/smart-contract/operations/random)。
